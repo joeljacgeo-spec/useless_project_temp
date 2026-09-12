@@ -475,44 +475,30 @@ const AudioEngine = (function(){
   const ALPHA = 1.6, BETA = 0.06, REF = 0.0006, EMA_K = 0.35;
   let ready = false, calibrated = false;
   const listeners = [];
-  let fallbackDb = 0;
 
   const dbToLinear = db => Math.pow(10, db/20);
 
   async function init(){
     if(ready) return true;
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      ready = true;
-      calibrated = true;
-      fallbackDb = 0;
-      return false;
-    }
-    try{
-      mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }
-      });
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if(ctx.state === 'suspended') await ctx.resume();
-      sourceNode = ctx.createMediaStreamSource(mediaStream);
-      highpass = ctx.createBiquadFilter();
-      highpass.type = 'highpass';
-      highpass.frequency.value = 90;
-      highpass.Q.value = 0.7;
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = fftSize;
-      analyser.smoothingTimeConstant = 0;
-      sourceNode.connect(highpass);
-      highpass.connect(analyser);
-      freqBins = analyser.frequencyBinCount;
-      ready = true;
-      loop();
-      return true;
-    }catch(err){
-      ready = true;
-      calibrated = true;
-      fallbackDb = 0;
-      return false;
-    }
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+    });
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if(ctx.state === 'suspended') await ctx.resume();
+    sourceNode = ctx.createMediaStreamSource(mediaStream);
+    highpass = ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 90;
+    highpass.Q.value = 0.7;
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = fftSize;
+    analyser.smoothingTimeConstant = 0;
+    sourceNode.connect(highpass);
+    highpass.connect(analyser);
+    freqBins = analyser.frequencyBinCount;
+    ready = true;
+    loop();
+    return true;
   }
 
   function currentMagnitudeSpectrum(){
@@ -572,10 +558,8 @@ const AudioEngine = (function(){
     onLevel: fn=>listeners.push(fn),
     isReady: ()=>ready,
     isCalibrated: ()=>calibrated,
-    getDb: ()=>smoothedDb || fallbackDb,
-    setGain: g=>{ micGain = g; },
-    setFallbackDb: v=>{ fallbackDb = clamp(Number.isFinite(v) ? v : 0, 0, 120); },
-    getFallbackDb: ()=>fallbackDb
+    getDb: ()=>smoothedDb,
+    setGain: g=>{ micGain = g; }
   };
 })();
 
@@ -609,25 +593,16 @@ btnEnableMic.addEventListener('click', async ()=>{
     btnEnableMic.textContent = 'മൈക്ക് ഓണാണ്';
     btnCalibrate.disabled = false;
   }catch(err){
-    micStatusText.textContent = 'Microphone access was blocked or failed (' + err.message + '). Falling back to keyboard/tap control so the game still works.';
+    micStatusText.textContent = 'Microphone access was blocked or failed (' + err.message + '). Allow microphone permission for this page and try again.';
     btnEnableMic.disabled = false;
     btnEnableMic.textContent = 'മൈക്ക് ഓൺ ചെയ്യുക';
   }
-  btnCalibrate.disabled = false;
-  btnFlapStart.disabled = false;
-  btnFlapStart.textContent = 'തുടങ്ങാം';
-  btnScreamStart.disabled = false;
-  btnScreamStart.textContent = 'ശബ്ദ റൗണ്ട് തുടങ്ങാം';
 });
 
 btnCalibrate.addEventListener('click', async ()=>{
   btnCalibrate.disabled = true;
   btnCalibrate.textContent = 'കാൽബ്രേറ്റ് ചെയ്യുന്നു — നിശ്ശബ്ദമായി ഇരിക്കൂ…';
-  try {
-    await AudioEngine.calibrate(1500);
-  } catch (err) {
-    AudioEngine.setFallbackDb(6);
-  }
+  await AudioEngine.calibrate(1500);
   await new Promise(r=>setTimeout(r,250));
   const ambient = AudioEngine.getDb();
   btnCalibrate.textContent = 'റൂം ശബ്ദം വീണ്ടും ക്രമീകരിക്കുക';
@@ -877,7 +852,6 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   function handleFlapPress(force = 1){
     if(state !== 'running') return;
     applyImpulse(force);
-    AudioEngine.setFallbackDb(28 + (Math.random() * 18));
   }
 
   btnFlapStart.addEventListener('click', ()=>{
